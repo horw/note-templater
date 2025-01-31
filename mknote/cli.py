@@ -75,6 +75,49 @@ def get_expected_tasks(filename):
     return tasks
 
 
+def create_project(project_name, base_dir):
+    """Create a new project directory and initial note."""
+    base_dir = os.path.expanduser(base_dir)
+    project_dir = os.path.join(base_dir, project_name)
+
+    if os.path.exists(project_dir):
+        print(f"Project '{project_name}' already exists.")
+        return False
+
+    os.makedirs(project_dir)
+    print(f"Created new project directory: {project_dir}")
+
+    # Create initial README
+    readme_path = os.path.join(project_dir, "README.md")
+    with open(readme_path, "w") as f:
+        f.write(f"# {project_name}\n\nProject created on {datetime.now().strftime('%Y-%m-%d')}")
+
+    # Create first daily note
+    create_daily_note(project_name, base_dir)
+    return True
+
+
+def list_projects(base_dir):
+    """List all existing projects in the base directory."""
+    base_dir = os.path.expanduser(base_dir)
+    if not os.path.exists(base_dir):
+        print(f"No projects found. Base directory '{base_dir}' does not exist.")
+        return
+
+    projects = []
+    for item in os.listdir(base_dir):
+        item_path = os.path.join(base_dir, item)
+        if os.path.isdir(item_path):
+            projects.append(item)
+
+    if not projects:
+        print("No projects found.")
+    else:
+        print("\nExisting projects:")
+        for project in sorted(projects):
+            print(f"- {project}")
+
+
 def create_daily_note(project_name, base_dir="notes"):
     # Get today's date and yesterday's date
     today = datetime.now()
@@ -85,15 +128,16 @@ def create_daily_note(project_name, base_dir="notes"):
 
     # Expand the ~ in the path to the user's home directory
     base_dir = os.path.expanduser(base_dir)
+    project_dir = os.path.join(base_dir, project_name)
 
-    # Create the base directory if it doesn't exist
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
-        print(f"Created base directory: {base_dir}")
+    # Check if project exists
+    if not os.path.exists(project_dir):
+        print(f"Project '{project_name}' does not exist. Create it first using the 'new' command.")
+        return False
 
-    # Define the filenames
-    today_filename = os.path.join(base_dir, f"{today_str}_{project_name}.md")
-    yesterday_filename = os.path.join(base_dir, f"{yesterday_str}_{project_name}.md")
+    # Define the filenames within the project directory
+    today_filename = os.path.join(project_dir, f"{today_str}.md")
+    yesterday_filename = os.path.join(project_dir, f"{yesterday_str}.md")
 
     # Get incomplete tasks from yesterday
     carried_tasks = get_incomplete_tasks(yesterday_filename)
@@ -101,34 +145,54 @@ def create_daily_note(project_name, base_dir="notes"):
 
     # Get expected tasks from yesterday
     expected_tasks = get_expected_tasks(yesterday_filename)
-    expected_tasks_str = "- No expected tasks" if not expected_tasks else ""
+    expected_tasks_str = "- No expected tasks" if not expected_tasks else "\n".join(expected_tasks)
 
     # Check if today's file already exists
     if os.path.exists(today_filename):
         print(f"File '{today_filename}' already exists.")
-    else:
-        # Create the file and write the template
-        with open(today_filename, "w") as file:
-            file.write(TEMPLATE.format(
-                date=today_str,
-                project_name=project_name,
-                carried_tasks=carried_tasks_str,
-                expected_tasks=expected_tasks_str
-            ))
-        print(f"Created file '{today_filename}' with the daily note template.")
-        if carried_tasks:
-            print(f"Carried over {len(carried_tasks)} incomplete tasks from yesterday.")
+        return False
+
+    # Create the file and write the template
+    with open(today_filename, "w") as file:
+        file.write(TEMPLATE.format(
+            date=today_str,
+            project_name=project_name,
+            carried_tasks=carried_tasks_str,
+            expected_tasks=expected_tasks_str
+        ))
+    print(f"Created file '{today_filename}' with the daily note template.")
+    if carried_tasks:
+        print(f"Carried over {len(carried_tasks)} incomplete tasks from yesterday.")
+    return True
 
 
 def main():
-    # Set up argument parsing
-    parser = argparse.ArgumentParser(description="Create a daily note for a project.")
-    parser.add_argument("project_name", help="Name of the project")
+    parser = argparse.ArgumentParser(description="Manage daily notes for projects.")
     parser.add_argument("--base-dir", default="~/.notes", help="Base directory to save notes (default: '~/.notes')")
+
+    subparsers = parser.add_subparsers(dest="command", help="Commands")
+
+    # New project command
+    new_parser = subparsers.add_parser("new", help="Create a new project")
+    new_parser.add_argument("project_name", help="Name of the project")
+
+    # List projects command
+    subparsers.add_parser("list", help="List existing projects")
+
+    # Create daily note command
+    daily_parser = subparsers.add_parser("daily", help="Create a daily note for a project")
+    daily_parser.add_argument("project_name", help="Name of the project")
+
     args = parser.parse_args()
 
-    # Create the daily note
-    create_daily_note(args.project_name, args.base_dir)
+    if args.command == "new":
+        create_project(args.project_name, args.base_dir)
+    elif args.command == "list":
+        list_projects(args.base_dir)
+    elif args.command == "daily":
+        create_daily_note(args.project_name, args.base_dir)
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":

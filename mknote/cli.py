@@ -1,8 +1,10 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import argparse
+import calendar
+import math
 
-# Define the template for the daily note
+# Previous template definition remains the same
 TEMPLATE = """# Daily Note - {date} - {project_name}
 
 ## Carried Over Tasks
@@ -31,6 +33,7 @@ TEMPLATE = """# Daily Note - {date} - {project_name}
 """
 
 
+# Previous functions remain the same (get_incomplete_tasks, get_expected_tasks)
 def get_incomplete_tasks(filename):
     """Extract incomplete tasks from a previous note."""
     if not os.path.exists(filename):
@@ -75,6 +78,91 @@ def get_expected_tasks(filename):
     return tasks
 
 
+def count_completed_tasks(filename):
+    """Count completed tasks in a note file."""
+    if not os.path.exists(filename):
+        return 0
+
+    with open(filename, 'r') as file:
+        content = file.read()
+
+    completed_tasks = content.count('- [x]')
+    return completed_tasks
+
+
+def generate_contribution_graph(project_name, base_dir, months=12):
+    """Generate a GitHub-like contribution graph for the project."""
+    base_dir = os.path.expanduser(base_dir)
+    project_dir = os.path.join(base_dir, project_name)
+
+    if not os.path.exists(project_dir):
+        print(f"Project '{project_name}' does not exist.")
+        return
+
+    # Calculate date range
+    end_date = date.today()
+    start_date = end_date - timedelta(days=months * 30)  # Approximate months
+
+    # Collect data
+    contribution_data = {}
+    current_date = start_date
+    while current_date <= end_date:
+        date_str = current_date.strftime("%Y-%m-%d")
+        filename = os.path.join(project_dir, f"{date_str}.md")
+
+        if os.path.exists(filename):
+            completed_tasks = count_completed_tasks(filename)
+            # Calculate activity level (0-4)
+            if completed_tasks == 0:
+                level = 1  # Light green for just creating a note
+            else:
+                level = min(4, 1 + math.floor(completed_tasks / 3))  # More tasks = darker green
+        else:
+            level = 0  # No activity
+
+        contribution_data[date_str] = level
+        current_date += timedelta(days=1)
+
+    # Generate ASCII visualization
+    print(f"\nContribution graph for {project_name} (last {months} months):")
+    print("Less " + "─" * 20 + " More")
+    print("█ = High activity  ▓ = Medium  ▒ = Low  ░ = Very Low  · = None\n")
+
+    # Generate month labels
+    months_label = ""
+    current_date = start_date
+    while current_date <= end_date:
+        if current_date.day == 1:
+            months_label += f"{current_date.strftime('%b')}   "
+        current_date += timedelta(days=1)
+    print(months_label)
+
+    # Generate the graph
+    for day_of_week in range(7):
+        row = ""
+        current_date = start_date + timedelta(days=(7 - start_date.weekday() + day_of_week) % 7)
+        while current_date <= end_date:
+            date_str = current_date.strftime("%Y-%m-%d")
+            level = contribution_data.get(date_str, 0)
+
+            # Use different characters for different activity levels
+            if level == 0:
+                row += "·"
+            elif level == 1:
+                row += "░"
+            elif level == 2:
+                row += "▒"
+            elif level == 3:
+                row += "▓"
+            else:
+                row += "█"
+
+            row += " "
+            current_date += timedelta(days=7)
+        print(row)
+    print()
+
+
 def create_project(project_name, base_dir):
     """Create a new project directory and initial note."""
     base_dir = os.path.expanduser(base_dir)
@@ -116,6 +204,8 @@ def list_projects(base_dir):
         print("\nExisting projects:")
         for project in sorted(projects):
             print(f"- {project}")
+            # Generate contribution graph for each project
+            generate_contribution_graph(project, base_dir)
 
 
 def create_daily_note(project_name, base_dir="notes"):
@@ -177,11 +267,17 @@ def main():
     new_parser.add_argument("project_name", help="Name of the project")
 
     # List projects command
-    subparsers.add_parser("list", help="List existing projects")
+    list_parser = subparsers.add_parser("list", help="List existing projects")
+    list_parser.add_argument("--months", type=int, default=12, help="Number of months to show in contribution graph")
 
     # Create daily note command
     daily_parser = subparsers.add_parser("daily", help="Create a daily note for a project")
     daily_parser.add_argument("project_name", help="Name of the project")
+
+    # Stats command
+    stats_parser = subparsers.add_parser("stats", help="Show contribution graph for a specific project")
+    stats_parser.add_argument("project_name", help="Name of the project")
+    stats_parser.add_argument("--months", type=int, default=12, help="Number of months to show in contribution graph")
 
     args = parser.parse_args()
 
@@ -191,6 +287,8 @@ def main():
         list_projects(args.base_dir)
     elif args.command == "daily":
         create_daily_note(args.project_name, args.base_dir)
+    elif args.command == "stats":
+        generate_contribution_graph(args.project_name, args.base_dir, args.months)
     else:
         parser.print_help()
 

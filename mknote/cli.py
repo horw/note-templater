@@ -56,6 +56,77 @@ def get_incomplete_tasks(filename):
     return tasks
 
 
+def get_important_items(filename):
+    """Extract important items from a note file.
+    [!] - open items
+    [!!] - closed items
+    """
+    if not os.path.exists(filename):
+        return []
+
+    items = []
+    current_section = None
+    current_text = []
+
+    with open(filename, 'r', encoding='utf-8') as file:
+        for line in file:
+
+            if line.startswith('##'):
+                current_section = line[2:].strip()
+                continue
+
+            if current_text:  # If we're in an item, collect additional lines
+                current_text.append(line)
+
+            if '[!]' in line:
+                current_text = [' ', line]
+
+            if '[!!]' in line:
+                if current_text:  # Save previous item if exists
+                    items.append({
+                        'item': ''.join(current_text).split('[!]')[1].split('[!!]')[0],
+                        'section': current_section,
+                        'date': os.path.basename(filename).replace('.md', ''),
+                    })
+                current_text = []
+
+
+    return items
+
+
+def display_important_items(project_name, base_dir):
+    """Display all important items from a project's notes."""
+    base_dir = os.path.expanduser(base_dir)
+    project_dir = os.path.join(base_dir, project_name)
+
+    if not os.path.exists(project_dir):
+        print(f"Project '{project_name}' does not exist.")
+        return
+
+    all_important_items = []
+    for filename in os.listdir(project_dir):
+        if filename.endswith('.md') and filename != 'README.md':
+            file_path = os.path.join(project_dir, filename)
+            items = get_important_items(file_path)
+            all_important_items.extend(items)
+
+    if not all_important_items:
+        print(f"No important items found in project '{project_name}'")
+        return
+
+    print(f"\nImportant Items for project '{project_name}':")
+    print("-" * 50)
+
+    # Sort items by date
+    all_important_items.sort(key=lambda x: x['date'], reverse=True)
+
+    current_date = None
+    for item in all_important_items:
+        if current_date != item['date']:
+            current_date = item['date']
+            print(f"\n***** {current_date} *****\n")
+        print(f"[{item['section']}] \n\n {item['item']}")
+
 def get_expected_tasks(filename):
     """Extract expected tasks for tomorrow from the current note."""
     if not os.path.exists(filename):
@@ -301,6 +372,10 @@ def main():
     stats_parser.add_argument("project_name", help="Name of the project")
     stats_parser.add_argument("--months", type=int, default=12, help="Number of months to show in contribution graph")
 
+
+    important_parser = subparsers.add_parser("i", help="Show important items from project notes")
+    important_parser.add_argument("project_name", help="Name of the project")
+
     args = parser.parse_args()
 
     if args.command == "new":
@@ -311,6 +386,8 @@ def main():
         create_daily_note(args.project_name, args.base_dir)
     elif args.command == "stats":
         generate_contribution_graph(args.project_name, args.base_dir, args.months)
+    elif args.command == "i":
+        display_important_items(args.project_name, args.base_dir)
     else:
         parser.print_help()
 

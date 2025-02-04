@@ -7,18 +7,13 @@ import math
 # Previous template definition remains the same
 TEMPLATE = """# Daily Note - {date} - {project_name}
 
-## Carried Over Tasks
-{carried_tasks}
-
 ## Goals for Today
 - [ ] Goal 1
 - [ ] Goal 2
 - [ ] Goal 3
 
 ## Tasks
-- [ ] Task 1
-- [ ] Task 2
-- [ ] Task 3
+{carried_tasks}
 
 ## Notes
 - Note 1
@@ -32,6 +27,11 @@ TEMPLATE = """# Daily Note - {date} - {project_name}
 - What could be improved?
 """
 
+def get_template_tasks():
+    output = []
+    for i in range(3):
+        output.append(" -  Task {}".format(i))
+    return '\n'.join(output)
 
 # Previous functions remain the same (get_incomplete_tasks, get_expected_tasks)
 def get_incomplete_tasks(filename):
@@ -46,7 +46,7 @@ def get_incomplete_tasks(filename):
     in_tasks_section = False
 
     for line in content.split('\n'):
-        if '## Tasks' in line or '## Carried Over Tasks' in line:
+        if '## Tasks' in line:
             in_tasks_section = True
         elif line.startswith('##'):
             in_tasks_section = False
@@ -163,6 +163,25 @@ def generate_contribution_graph(project_name, base_dir, months=12):
     print()
 
 
+def find_last_note(project_dir):
+    """Find the most recent note file in the project directory."""
+    if not os.path.exists(project_dir):
+        return None
+
+    # Get all .md files except README.md
+    note_files = [f for f in os.listdir(project_dir)
+                  if f.endswith('.md') and f != 'README.md']
+
+    if not note_files:
+        return None
+
+    # Sort files by date (files are named YYYY-MM-DD.md)
+    note_files.sort(reverse=True)
+
+    # Return the most recent file
+    return os.path.join(project_dir, note_files[0])
+
+
 def create_project(project_name, base_dir):
     """Create a new project directory and initial note."""
     base_dir = os.path.expanduser(base_dir)
@@ -209,12 +228,9 @@ def list_projects(base_dir):
 
 
 def create_daily_note(project_name, base_dir="notes"):
-    # Get today's date and yesterday's date
+    # Get today's date
     today = datetime.now()
-    yesterday = today - timedelta(days=1)
-
     today_str = today.strftime("%Y-%m-%d")
-    yesterday_str = yesterday.strftime("%Y-%m-%d")
 
     # Expand the ~ in the path to the user's home directory
     base_dir = os.path.expanduser(base_dir)
@@ -225,16 +241,22 @@ def create_daily_note(project_name, base_dir="notes"):
         print(f"Project '{project_name}' does not exist. Create it first using the 'new' command.")
         return False
 
-    # Define the filenames within the project directory
+    # Define today's filename
     today_filename = os.path.join(project_dir, f"{today_str}.md")
-    yesterday_filename = os.path.join(project_dir, f"{yesterday_str}.md")
 
-    # Get incomplete tasks from yesterday
-    carried_tasks = get_incomplete_tasks(yesterday_filename)
-    carried_tasks_str = "\n".join(carried_tasks) if carried_tasks else "- No tasks carried over"
+    # Find the last note
+    last_note = find_last_note(project_dir)
 
-    # Get expected tasks from yesterday
-    expected_tasks = get_expected_tasks(yesterday_filename)
+    # Get incomplete tasks from last note
+    carried_tasks = []
+    expected_tasks = []
+    if last_note:
+        carried_tasks = get_incomplete_tasks(last_note)
+        carried_tasks.extend(get_expected_tasks(last_note))
+        last_note_date = os.path.basename(last_note).replace('.md', '')
+        print(f"Processing tasks from last note: {last_note_date}")
+
+    carried_tasks_str = "\n".join(carried_tasks) if carried_tasks else get_template_tasks()
     expected_tasks_str = "- No expected tasks" if not expected_tasks else "\n".join(expected_tasks)
 
     # Check if today's file already exists
@@ -252,7 +274,7 @@ def create_daily_note(project_name, base_dir="notes"):
         ))
     print(f"Created file '{today_filename}' with the daily note template.")
     if carried_tasks:
-        print(f"Carried over {len(carried_tasks)} incomplete tasks from yesterday.")
+        print(f"Carried over {len(carried_tasks)} incomplete tasks from last note.")
     return True
 
 

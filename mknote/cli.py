@@ -1,8 +1,38 @@
+import json
 import os
 from datetime import datetime, timedelta, date
 import argparse
-import calendar
 import math
+
+CONFIG_FILE = os.path.expanduser("~/.noter-config")
+
+
+def load_config():
+    """Load configuration from file."""
+    if not os.path.exists(CONFIG_FILE):
+        return {"base_dir": os.path.expanduser("~/.notes")}
+
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return {"base_dir": os.path.expanduser("~/.notes")}
+
+
+def save_config(config):
+    """Save configuration to file."""
+    with open(CONFIG_FILE, 'w+') as f:
+        json.dump(config, f, indent=2)
+
+
+def set_base_dir(base_dir):
+    """Set and save base directory configuration."""
+    base_dir = os.path.expanduser(base_dir)
+    config = load_config()
+    config["base_dir"] = base_dir
+    save_config(config)
+
+    return base_dir
 
 # Previous template definition remains the same
 TEMPLATE = """# Daily Note - {date} - {project_name}
@@ -376,7 +406,19 @@ def main():
     important_parser = subparsers.add_parser("i", help="Show important items from project notes")
     important_parser.add_argument("project_name", help="Name of the project")
 
+    # Add config subcommand
+    config_parser = subparsers.add_parser("config", help="Configure noter settings")
+    config_parser.add_argument("--base-dir", default="~/.notes", help="Base directory to save notes (default: '~/.notes')")
+
     args = parser.parse_args()
+
+    if args.command == "config":
+        set_base_dir(args.base_dir)
+        print(f"Base directory set to: {args.base_dir}")
+        return
+
+    config = load_config()
+    args.base_dir = config["base_dir"]
 
     if args.command == "new":
         create_project(args.project_name, args.base_dir)

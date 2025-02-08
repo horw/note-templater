@@ -305,6 +305,17 @@ def create_project(project_name, base_dir):
     return True
 
 
+def open_vscode(base_dir):
+    """Open VSCode in the specified base directory.
+
+    Args:
+        base_dir (str): Base directory path where notes are stored
+    """
+    import subprocess
+
+    base_dir = os.path.expanduser(base_dir)
+    subprocess.Popen(['code', base_dir])
+
 def list_projects(base_dir):
     """List all existing projects in the base directory."""
     base_dir = os.path.expanduser(base_dir)
@@ -385,6 +396,8 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", help="Commands")
 
+    subparsers.add_parser("code", help="Open vscode")
+
     # New project command
     new_parser = subparsers.add_parser("new", help="Create a new project")
     new_parser.add_argument("project_name", help="Name of the project")
@@ -422,6 +435,8 @@ def main():
 
     if args.command == "new":
         create_project(args.project_name, args.base_dir)
+    elif args.command == "code":
+        open_vscode(args.base_dir)
     elif args.command == "list":
         list_projects(args.base_dir)
     elif args.command == "daily":

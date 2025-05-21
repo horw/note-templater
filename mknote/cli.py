@@ -832,32 +832,6 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
         max_length (int): Maximum preview length for notifications.
         background (bool): If True, run in background mode (no console output).
     """
-    # Define colors and styles using ANSI codes
-    COLORS = {
-        'RESET': '\033[0m',
-        'BOLD': '\033[1m',
-        'UNDERLINE': '\033[4m',
-        'RED': '\033[31m',
-        'GREEN': '\033[32m',
-        'YELLOW': '\033[33m',
-        'BLUE': '\033[34m',
-        'MAGENTA': '\033[35m',
-        'CYAN': '\033[36m',
-        'WHITE': '\033[37m',
-        'BG_GREEN': '\033[42m',
-        'BG_BLUE': '\033[44m'
-    }
-    
-    # Helper function to print colored text
-    def colorize(text, color_code):
-        return f"{color_code}{text}{COLORS['RESET']}"
-    
-    # Display a styled header
-    def print_header(text, color=COLORS['BLUE']):
-        print(f"\n{colorize('══════════════════════════════════════════════', color)}")
-        print(colorize(f"  {text.upper()}  ", color + COLORS['BOLD']))
-        print(f"{colorize('══════════════════════════════════════════════', color)}")
-    
     # If running in background mode, detach from console
     if background:
         try:
@@ -876,19 +850,19 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
                             stderr=open(os.devnull, 'w'),
                             start_new_session=True)
             
-            print(colorize("✅ Clipboard monitor started in background.", COLORS['GREEN'] + COLORS['BOLD']))
-            print(colorize("  To stop it, find the process with:", COLORS['CYAN']))
-            print(colorize("  → ps aux | grep 'python.*monitor'", COLORS['YELLOW']))
-            print(colorize("  Then kill it with:", COLORS['CYAN']))
-            print(colorize("  → kill <PID>", COLORS['YELLOW']))
+            print("Clipboard monitor started in background.")
+            print("To stop it, find the process with: ps aux | grep 'python.*monitor'")
+            print("Then kill it with: kill <PID>")
             return
         except Exception as e:
-            print(colorize(f"❌ Error starting background monitor: {e}", COLORS['RED']))
-            print(colorize("  Falling back to foreground mode.", COLORS['YELLOW']))
+            print(f"Error starting background monitor: {e}")
+            print("Falling back to foreground mode.")
     
+    # Store clipboard history during this session
     clipboard_history = []
     
     try:
+        # Check if notify-send is available (for Linux)
         has_notify = False
         if popup_command is None:
             try:
@@ -896,7 +870,7 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
                 has_notify = True
                 popup_command = "notify-send"
             except subprocess.CalledProcessError:
-                print(colorize("⚠️  notify-send not found. Will print clipboard changes to console instead.", COLORS['YELLOW']))
+                print("notify-send not found. Will print clipboard changes to console instead.")
         else:
             has_notify = True
         
@@ -908,32 +882,40 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
         except subprocess.CalledProcessError:
             pass
         
-        print_header("Clipboard Monitor")
-        print(colorize("🔍 Monitoring clipboard changes. Press Ctrl+C to stop.", COLORS['GREEN'] + COLORS['BOLD']))
-        print(colorize(f"⏱️  Checking every {interval} seconds.", COLORS['CYAN']))
-        
+        print("Monitoring clipboard changes. Press Ctrl+C to stop.")
+        print(f"Checking every {interval} seconds.")
         if has_notify:
-            print(colorize("🔔 Using desktop notifications.", COLORS['MAGENTA']))
+            print("Using desktop notifications.")
         if has_zenity:
-            print(colorize("✓ Grammar check prompts enabled.", COLORS['GREEN']))
+            print("Grammar check prompts enabled.")
+        print("\nAvailable commands during monitoring:")
+        print("  h: Show clipboard history")
+        print("  s: Save current clipboard content to a file")
+        print("  g: Check grammar for current clipboard content")
+        print("  q: Quit monitoring")
         
-        # Command help box
-        print(colorize("\n┌─ AVAILABLE COMMANDS ───────────────────────────┐", COLORS['BLUE']))
-        print(colorize("│                                                 │", COLORS['BLUE']))
-        print(f"{colorize('│', COLORS['BLUE'])} {colorize('q', COLORS['YELLOW'] + COLORS['BOLD'])}: Quit monitoring {colorize('                             │', COLORS['BLUE'])}")
-        print(colorize("│                                                 │", COLORS['BLUE']))
-        print(colorize("└─────────────────────────────────────────────────┘", COLORS['BLUE']))
-
         # Create a separate thread for handling keyboard input
         def input_handler():
             while True:
                 try:
                     cmd = input().lower().strip()
-                    if cmd == 'q':
-                        print(colorize("\n👋 Exiting clipboard monitor...", COLORS['MAGENTA']))
+                    
+                    if cmd == 'h':
+                        show_clipboard_history(clipboard_history)
+                    elif cmd == 's':
+                        save_clipboard_to_file(pyperclip.paste())
+                    elif cmd == 'g':
+                        current = pyperclip.paste()
+                        if current:
+                            print("\nRunning grammar check...")
+                            check_grammar()
+                        else:
+                            print("\nClipboard is empty, nothing to check.")
+                    elif cmd == 'q':
+                        print("\nExiting clipboard monitor...")
                         os._exit(0)  # Force exit all threads
                 except Exception as e:
-                    print(colorize(f"\n❌ Error processing command: {e}", COLORS['RED']))
+                    print(f"Error processing command: {e}")
         
         # Start input handler thread
         input_thread = threading.Thread(target=input_handler)
@@ -953,7 +935,7 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
             try:
                 current_content = pyperclip.paste()
             except Exception as e:
-                print(colorize(f"❌ Error accessing clipboard: {e}", COLORS['RED']))
+                print(f"Error accessing clipboard: {e}")
                 continue
             
             # Check if content has changed
@@ -961,107 +943,95 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
                 change_count += 1
                 current_timestamp = time.time()
                 
+                # Calculate time since last change
                 time_diff = current_timestamp - last_timestamp
                 last_timestamp = current_timestamp
                 
-                if len(clipboard_history) >= 50:
+                # Add to history
+                if len(clipboard_history) >= 50:  # Limit history size
                     clipboard_history.pop(0)
                 
                 timestamp_str = datetime.now().strftime("%H:%M:%S")
                 clipboard_history.append((timestamp_str, current_content))
                 
+                # Get a preview of the new content
                 preview = current_content[:max_length]
                 if len(current_content) > max_length:
                     preview += "..."
-
+                
+                # Create notification message
+                title = f"Clipboard Changed (#{change_count})"
+                message = f"New content ({len(current_content)} chars):\n{preview}"
+                
+                # Show notification
+                if has_notify:
+                    try:
+                        subprocess.Popen([popup_command, title, message])
+                    except Exception as e:
+                        print(f"Error showing notification: {e}")
+                        print(f"{title}: {message}")
+                else:
+                    print("\n" + "="*50)
+                    print(f"{title} (after {time_diff:.1f}s)")
+                    print("-"*50)
+                    print(message)
+                    print("="*50)
+                
+                # Update last known content
                 last_content = current_content
 
+                # Option to perform grammar check
                 if has_zenity and len(current_content) > 10:
-                    try:
-                        zenity_cmd = [
-                            "zenity", "--question",
-                            "--title=Grammar Check",
-                            "--text=<span font='12' color='#3498DB'><b>Would you like to check grammar for the copied text?</b></span>\n\n<span font='10'>" + 
-                                preview[:50].replace('<', '&lt;').replace('>', '&gt;') + "...</span>",
-                            "--ok-label=Check Grammar",
-                            "--cancel-label=Skip",
-                            "--width=350",
-                            "--height=150",
-                            "--icon-name=accessories-text-editor"
-                        ]
-                        result = subprocess.run(zenity_cmd, check=False)
-                        print(result)
-                        if result.returncode == 0:
-                            last_content = check_grammar(current_content)
-                    except Exception as e:
-                        print(colorize(f"❌ Error showing grammar check dialog: {e}", COLORS['RED']))
+                    # Only show grammar check option if content is substantial
+                    last_content = grammar_check_option(current_content)
+                    
     except KeyboardInterrupt:
-        print(colorize("\n🛑 Clipboard monitoring stopped.", COLORS['RED'] + COLORS['BOLD']))
-
+        # Show summary before exiting
+        if clipboard_history:
+            print("\nClipboard changes during this session:")
+            print(f"Total changes: {len(clipboard_history)}")
+            save_option = input("Save clipboard history to file? (y/n): ").lower().strip()
+            if save_option == 'y' or save_option == 'yes':
+                save_clipboard_history(clipboard_history)
+        
+        print("\nClipboard monitoring stopped.")
 
 def show_clipboard_history(history):
     """Display the clipboard history in the console."""
-    COLORS = {
-        'RESET': '\033[0m',
-        'BOLD': '\033[1m',
-        'UNDERLINE': '\033[4m',
-        'RED': '\033[31m',
-        'GREEN': '\033[32m',
-        'YELLOW': '\033[33m',
-        'BLUE': '\033[34m',
-        'MAGENTA': '\033[35m',
-        'CYAN': '\033[36m',
-        'WHITE': '\033[37m',
-    }
-    
-    def colorize(text, color_code):
-        return f"{color_code}{text}{COLORS['RESET']}"
-    
     if not history:
-        print(colorize("\n⚠️ No clipboard history available yet.", COLORS['YELLOW']))
+        print("\nNo clipboard history available yet.")
         return
     
-    print(colorize("\n┏━━━━━━━━━━━━━━━━━━━━━━━━━ CLIPBOARD HISTORY ━━━━━━━━━━━━━━━━━━━━━━━━━┓", COLORS['BLUE'] + COLORS['BOLD']))
+    print("\nClipboard History:")
+    print("-" * 50)
     
     for i, (timestamp, content) in enumerate(reversed(history), 1):
         preview = content[:50] + "..." if len(content) > 50 else content
-        # Alternate row colors for better readability
-        bg_color = COLORS['CYAN'] if i % 2 == 0 else COLORS['GREEN']
-        print(colorize(f"┃ {i:2d} ┃ ", COLORS['BLUE']) + 
-              colorize(f"{timestamp}", bg_color) + 
-              colorize(" ┃ ", COLORS['BLUE']) + 
-              colorize(preview.replace('\n', ' '), COLORS['WHITE']))
+        print(f"[{i}] {timestamp}: {preview}")
     
-    print(colorize("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛", COLORS['BLUE'] + COLORS['BOLD']))
+    print("-" * 50)
     
     # Ask if user wants to view a specific entry
-    choice = input(colorize("🔍 Enter number to view full content (or press Enter to continue): ", COLORS['YELLOW'])).strip()
+    choice = input("Enter number to view full content (or press Enter to continue): ").strip()
     if choice and choice.isdigit():
         try:
             idx = int(choice) - 1
             if 0 <= idx < len(history):
                 ts, content = history[len(history) - idx - 1]
-                print(colorize("\n┏━━━━━━━━━━━━━━━━━━━━━━━━━ FULL CONTENT ━━━━━━━━━━━━━━━━━━━━━━━━━┓", COLORS['MAGENTA']))
-                print(colorize(f"┃ Timestamp: {ts}", COLORS['CYAN']))
-                print(colorize("┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫", COLORS['MAGENTA']))
-                
-                # Split content by lines and display with formatting
-                lines = content.split('\n')
-                for line in lines:
-                    print(colorize("┃ ", COLORS['MAGENTA']) + line)
-                
-                print(colorize("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛", COLORS['MAGENTA']))
+                print("\nFull content:")
+                print("-" * 30)
+                print(content)
+                print("-" * 30)
                 
                 # Ask if user wants to copy this back to clipboard
-                copy_back = input(colorize("📋 Copy this back to clipboard? (y/n): ", COLORS['YELLOW'])).lower().strip()
+                copy_back = input("Copy this back to clipboard? (y/n): ").lower().strip()
                 if copy_back == 'y' or copy_back == 'yes':
                     pyperclip.copy(content)
-                    print(colorize("✅ Content copied to clipboard.", COLORS['GREEN']))
+                    print("Content copied to clipboard.")
             else:
-                print(colorize("❌ Invalid selection.", COLORS['RED']))
+                print("Invalid selection.")
         except (ValueError, IndexError):
-            print(colorize("❌ Invalid selection.", COLORS['RED']))
-
+            print("Invalid selection.")
 
 def save_clipboard_to_file(content):
     """Save current clipboard content to a file."""
@@ -1121,33 +1091,29 @@ def save_clipboard_history(history):
     except Exception as e:
         print(f"Error saving clipboard history: {e}")
 
-
 def grammar_check_option(text):
     """Show a notification with option to check grammar for the text."""
     # Create a simple dialog to ask if user wants to check grammar
     try:
-        # Create a nicer zenity dialog for grammar check option
-        zenity_cmd = [
-            "zenity", "--question",
-            "--title=Grammar Check",
-            "--text=<span font='12' color='#3498DB'><b>Would you like to check grammar for the copied text?</b></span>\n\n<span font='10'>" + 
-                text[:50].replace('<', '&lt;').replace('>', '&gt;') + "...</span>",
-            "--ok-label=Check Grammar",
-            "--cancel-label=Skip",
-            "--width=350",
-            "--height=150",
-            "--icon-name=accessories-text-editor"
-        ]
-        result = subprocess.run(zenity_cmd, check=False)
+        result = subprocess.run(
+            ["zenity", "--question", "--title", "Grammar Check", 
+             "--text", "Would you like to check grammar for this clipboard text?", 
+             "--timeout", "10"],
+            check=False
+        )
+        
+        # If user clicked Yes (return code 0)
         if result.returncode == 0:
-            # User chose to check grammar
-            check_grammar(text)
+            # Save the text to clipboard (it might have changed since we checked)
+            pyperclip.copy(text)
+            
+            # Run the grammar check
+            return check_grammar()
     except FileNotFoundError:
         # Zenity not available
         pass
-    
-    # Always return the original text to maintain clipboard contents
-    return text
+    except Exception as e:
+        print(f"Error showing grammar check dialog: {e}")
 
 
 def main():

@@ -602,144 +602,6 @@ def view_grammar_logs(month=None, limit=10, entry_id=None, export=False):
     log_files.sort(reverse=True)
     print(", ".join(log_files))
 
-def command_line(text):
-    """Check and correct grammar for text in the clipboard using Gemini API."""
-    # Load configuration to get API key
-    config = load_config()
-    api_key = config.get("gemini_api_key")
-
-    if not api_key or api_key == "YOUR_API_KEY_HERE" or api_key == "":
-        print("Gemini API key not set. Let's configure it now.")
-        print("You'll need a Gemini API key from https://ai.google.dev/")
-
-        # Ask for the API key
-        new_key = input("Enter your Gemini API key: ").strip()
-        if not new_key:
-            print("No API key provided. Exiting.")
-            return
-
-        # Save the new API key
-        config["gemini_api_key"] = new_key
-        save_config(config)
-        api_key = new_key
-        print("API key saved successfully!")
-
-    # Get text from clipboard or use provided text
-    if text is None:
-        try:
-            text = pyperclip.paste()
-            if not text:
-                print("No text found in clipboard.")
-                return
-            print("Using text from clipboard.")
-        except Exception as e:
-            print(f"Error accessing clipboard: {e}")
-            return
-
-    # Show a preview of the text to be checked
-    preview = text[:60] + "..." if len(text) > 60 else text
-    print(f"Text to check ({len(text)} characters):")
-    print(f"\"{preview}\"")
-
-    print("\nChecking grammar...", end="", flush=True)
-
-    # Prepare prompt for Gemini API
-    prompt = f"""Please I working in terminal and want you give me  advice for follow command
-    Return ONLY the corrected text without any explanations or comments:
-
-    {text}"""
-
-    # Call Gemini API
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
-    }
-
-    try:
-        # Show a simple progress indicator
-        import threading
-        import time
-
-        stop_progress = False
-
-        def progress_indicator():
-            progress_chars = ["-", "\\", "|", "/"]
-            i = 0
-            while not stop_progress:
-                print(f"\rChecking grammar... {progress_chars[i % 4]}", end="", flush=True)
-                i += 1
-                time.sleep(0.2)
-
-        # Start progress indicator thread
-        progress_thread = threading.Thread(target=progress_indicator)
-        progress_thread.daemon = True
-        progress_thread.start()
-
-        # Make the API request
-        response = requests.post(url, headers=headers, json=data)
-
-        # Stop the progress indicator
-        stop_progress = True
-        progress_thread.join(timeout=0.5)  # Give the thread time to stop
-        print("\rChecking grammar... Done!       ")  # Clear the progress indicator
-
-        response.raise_for_status()
-
-        # Parse response
-        result = response.json()
-
-        if "candidates" in result and result["candidates"]:
-            corrected_text = ""
-            for content in result["candidates"]:
-                for part in content['content'].get("parts", []):
-                    if "text" in part:
-                        corrected_text += part["text"]
-
-            if corrected_text:
-                # Print a comparison of the text before and after correction
-                print("\nOriginal text:")
-                print(f"{text[:100]}{'...' if len(text) > 100 else ''}")
-
-                print("\nCorrected text:")
-                print(f"{corrected_text[:100]}{'...' if len(corrected_text) > 100 else ''}")
-
-                # Copy the corrected text to clipboard
-                pyperclip.copy(corrected_text)
-                print("Corrected text copied to clipboard.")
-
-                # Auto-paste the corrected text if requested
-                if True:
-                    try:
-                        # Give a short delay to ensure the clipboard has been updated
-                        time.sleep(0.5)
-                        # Perform the paste operation using Ctrl+V
-                        pyautogui.hotkey('ctrl', 'v')
-                        print("Auto-pasted corrected text.")
-                    except Exception as e:
-                        print(f"Auto-paste failed: {e}")
-
-                return corrected_text
-            else:
-                print("No corrected text received from API.")
-                # Log the failed attempt
-                log_grammar_check(text, "NO_CORRECTION_RECEIVED")
-        else:
-            print("Unexpected API response format.")
-            # Log the failed attempt
-            log_grammar_check(text, "UNEXPECTED_API_RESPONSE")
-
-    except requests.exceptions.RequestException as e:
-        print(f"\nAPI request error: {e}")
-        # Log the error
-        log_grammar_check(text, f"API_ERROR: {str(e)}")
-    except Exception as e:
-        print(f"\nError processing response: {e}")
-        # Log the error
-        log_grammar_check(text, f"ERROR: {str(e)}")
-
 
 def check_grammar(text=None, auto_paste=True):
     """Check and correct grammar for text in the clipboard using Gemini API."""
@@ -1119,11 +981,9 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
         while True:
             time.sleep(0.2)
             
+            # Get current clipboard content
             try:
                 current_content = pyperclip.paste()
-                if not current_content.lower().startswith('ai:'):
-                    continue
-                current_content = current_content[2:]
             except Exception as e:
                 print(colorize(f"❌ Error accessing clipboard: {e}", COLORS['RED']))
                 continue
@@ -1149,9 +1009,21 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
                 last_content = current_content
                 if has_zenity and len(current_content) > 10:
                     try:
-                        last_content = check_grammar(current_content, auto_paste=True)
-                        # last_content = command_line(current_content)
-                        save_clipboard_to_session_file(f"user-inserted-text:{current_content} -> ai-fixed: {last_content}", timestamp_str)
+                        zenity_cmd = [
+                            "zenity", "--question",
+                            "--title=Grammar Check",
+                            "--text=<span font='12' color='#3498DB'><b>Would you like to check grammar for the copied text?</b></span>\n\n<span font='10'>" + 
+                                preview[:50].replace('<', '&lt;').replace('>', '&gt;') + "...</span>",
+                            "--ok-label=Check Grammar",
+                            "--cancel-label=Skip",
+                            "--width=350",
+                            "--height=150",
+                            "--icon-name=accessories-text-editor"
+                        ]
+                        result = subprocess.run(zenity_cmd, check=False)
+                        if result.returncode == 0:
+                            last_content = check_grammar(current_content, auto_paste=True)
+                            save_clipboard_to_session_file(f"user-inserted-text:{current_content} -> ai-fixed: {last_content}", timestamp_str)
                     except Exception as e:
                         print(colorize(f"❌ Error showing grammar check dialog: {e}", COLORS['RED']))
     except KeyboardInterrupt:

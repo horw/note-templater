@@ -9,19 +9,12 @@ A tool to create daily notes for projects and manage grammar checking.
 - Generate contribution graphs
 - Check grammar with Gemini AI
 - Save and review grammar check history
-- Monitor clipboard changes in real-time
 
 ## Installation
 
 ```bash
 pip install -e .
 ```
-
-### Dependencies
-
-For the notification system:
-- Linux: `notify-send` (included in most distributions)
-- For grammar check prompts: `zenity` (optional)
 
 ## Usage
 
@@ -53,9 +46,6 @@ mknote code
 # Check grammar for text in clipboard
 mknote grammar
 
-# Check grammar for text provided directly
-mknote grammar --text "This text needs correcting"
-
 # View grammar check logs
 mknote grammar-logs
 
@@ -68,41 +58,6 @@ mknote grammar-logs --entry NUMBER
 # Export entry to file
 mknote grammar-logs --entry NUMBER --export
 ```
-
-### Clipboard Monitoring
-
-```bash
-# Monitor clipboard changes (shows desktop notifications)
-mknote monitor
-
-# Run monitor in background (keeps running after terminal closes)
-mknote monitor --background
-
-# Monitor with custom interval (in seconds)
-mknote monitor --interval 0.5
-
-# Limit preview length in notifications
-mknote monitor --max-length 50
-
-# Use custom notification command
-mknote monitor --popup-command "your-custom-command"
-```
-
-The clipboard monitor:
-- Watches for changes to your clipboard in real-time
-- Shows desktop notifications when content changes
-- Maintains a session history of clipboard changes
-- Saves clipboard content to files when requested
-
-During monitoring, you can use these interactive commands:
-- `h`: Show clipboard history (with option to restore previous content)
-- `s`: Save current clipboard content to a file
-- `g`: Check grammar for current clipboard content
-- `q`: Quit monitoring
-
-When you exit the monitoring session, you'll have the option to save your entire clipboard history to a file.
-
-Clipboard history files are stored in the `_clips` directory within your notes base directory.
 
 ### Configuration
 

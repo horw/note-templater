@@ -8,8 +8,6 @@ import pyperclip
 import subprocess
 import tempfile
 import csv
-import time
-import threading
 
 CONFIG_FILE = os.path.expanduser("~/.noter-config")
 
@@ -342,7 +340,6 @@ def open_vscode(base_dir):
     base_dir = os.path.expanduser(base_dir)
     subprocess.Popen(['code', base_dir])
 
-
 def list_projects(base_dir):
     """List all existing projects in the base directory."""
     base_dir = os.path.expanduser(base_dir)
@@ -602,7 +599,7 @@ def view_grammar_logs(month=None, limit=10, entry_id=None, export=False):
     print(", ".join(log_files))
 
 
-def check_grammar(text=None) -> str:
+def check_grammar():
     """Check and correct grammar for text in the clipboard using Gemini API."""
     # Load configuration to get API key
     config = load_config()
@@ -624,21 +621,19 @@ def check_grammar(text=None) -> str:
         api_key = new_key
         print("API key saved successfully!")
     
-    # Get text from clipboard or use provided text
-    if text is None:
-        try:
-            text = pyperclip.paste()
-            if not text:
-                print("No text found in clipboard.")
-                return
-            print("Using text from clipboard.")
-        except Exception as e:
-            print(f"Error accessing clipboard: {e}")
+    # Get text from clipboard
+    try:
+        text = pyperclip.paste()
+        if not text:
+            print("No text found in clipboard.")
             return
+    except Exception as e:
+        print(f"Error accessing clipboard: {e}")
+        return
     
     # Show a preview of the text to be checked
     preview = text[:60] + "..." if len(text) > 60 else text
-    print(f"Text to check ({len(text)} characters):")
+    print(f"Text from clipboard ({len(text)} characters):")
     print(f"\"{preview}\"")
     
     print("\nChecking grammar...", end="", flush=True)
@@ -723,8 +718,6 @@ Return ONLY the corrected text without any explanations or comments:
                 
                 # Log the grammar check
                 log_file = log_grammar_check(text, corrected_text)
-
-                return corrected_text
             else:
                 print("No corrected text received from API.")
                 # Log the failed attempt
@@ -822,300 +815,6 @@ def edit_config():
         os.unlink(temp_path)
 
 
-def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, background=False):
-    """
-    Monitor the clipboard for changes in real-time and show notifications.
-    
-    Args:
-        popup_command (str): Command to use for popups. If None, use notify-send.
-        interval (float): How often to check for clipboard changes (in seconds).
-        max_length (int): Maximum preview length for notifications.
-        background (bool): If True, run in background mode (no console output).
-    """
-    # If running in background mode, detach from console
-    if background:
-        try:
-            # Create a detached process
-            current_file = os.path.abspath(__file__)
-            args = ["python", current_file, "monitor", 
-                    "--interval", str(interval), 
-                    "--max-length", str(max_length)]
-            
-            if popup_command:
-                args.extend(["--popup-command", popup_command])
-                
-            # Use nohup to keep process running after terminal closes
-            subprocess.Popen(["nohup"] + args + ["&"], 
-                            stdout=open(os.devnull, 'w'),
-                            stderr=open(os.devnull, 'w'),
-                            start_new_session=True)
-            
-            print("Clipboard monitor started in background.")
-            print("To stop it, find the process with: ps aux | grep 'python.*monitor'")
-            print("Then kill it with: kill <PID>")
-            return
-        except Exception as e:
-            print(f"Error starting background monitor: {e}")
-            print("Falling back to foreground mode.")
-    
-    # Store clipboard history during this session
-    clipboard_history = []
-    
-    try:
-        # Check if notify-send is available (for Linux)
-        has_notify = False
-        if popup_command is None:
-            try:
-                subprocess.run(["which", "notify-send"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                has_notify = True
-                popup_command = "notify-send"
-            except subprocess.CalledProcessError:
-                print("notify-send not found. Will print clipboard changes to console instead.")
-        else:
-            has_notify = True
-        
-        # Check if zenity is available
-        has_zenity = False
-        try:
-            subprocess.run(["which", "zenity"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            has_zenity = True
-        except subprocess.CalledProcessError:
-            pass
-        
-        print("Monitoring clipboard changes. Press Ctrl+C to stop.")
-        print(f"Checking every {interval} seconds.")
-        if has_notify:
-            print("Using desktop notifications.")
-        if has_zenity:
-            print("Grammar check prompts enabled.")
-        print("\nAvailable commands during monitoring:")
-        print("  h: Show clipboard history")
-        print("  s: Save current clipboard content to a file")
-        print("  g: Check grammar for current clipboard content")
-        print("  q: Quit monitoring")
-        
-        # Create a separate thread for handling keyboard input
-        def input_handler():
-            while True:
-                try:
-                    cmd = input().lower().strip()
-                    
-                    if cmd == 'h':
-                        show_clipboard_history(clipboard_history)
-                    elif cmd == 's':
-                        save_clipboard_to_file(pyperclip.paste())
-                    elif cmd == 'g':
-                        current = pyperclip.paste()
-                        if current:
-                            print("\nRunning grammar check...")
-                            check_grammar()
-                        else:
-                            print("\nClipboard is empty, nothing to check.")
-                    elif cmd == 'q':
-                        print("\nExiting clipboard monitor...")
-                        os._exit(0)  # Force exit all threads
-                except Exception as e:
-                    print(f"Error processing command: {e}")
-        
-        # Start input handler thread
-        input_thread = threading.Thread(target=input_handler)
-        input_thread.daemon = True
-        input_thread.start()
-        
-        last_content = pyperclip.paste()
-        last_timestamp = time.time()
-        
-        # Initialize counter for clipboard changes
-        change_count = 0
-        
-        while True:
-            time.sleep(interval)
-            
-            # Get current clipboard content
-            try:
-                current_content = pyperclip.paste()
-            except Exception as e:
-                print(f"Error accessing clipboard: {e}")
-                continue
-            
-            # Check if content has changed
-            if current_content != last_content and current_content.strip():
-                change_count += 1
-                current_timestamp = time.time()
-                
-                # Calculate time since last change
-                time_diff = current_timestamp - last_timestamp
-                last_timestamp = current_timestamp
-                
-                # Add to history
-                if len(clipboard_history) >= 50:  # Limit history size
-                    clipboard_history.pop(0)
-                
-                timestamp_str = datetime.now().strftime("%H:%M:%S")
-                clipboard_history.append((timestamp_str, current_content))
-                
-                # Get a preview of the new content
-                preview = current_content[:max_length]
-                if len(current_content) > max_length:
-                    preview += "..."
-                
-                # Create notification message
-                title = f"Clipboard Changed (#{change_count})"
-                message = f"New content ({len(current_content)} chars):\n{preview}"
-                
-                # Show notification
-                if has_notify:
-                    try:
-                        subprocess.Popen([popup_command, title, message])
-                    except Exception as e:
-                        print(f"Error showing notification: {e}")
-                        print(f"{title}: {message}")
-                else:
-                    print("\n" + "="*50)
-                    print(f"{title} (after {time_diff:.1f}s)")
-                    print("-"*50)
-                    print(message)
-                    print("="*50)
-                
-                # Update last known content
-                last_content = current_content
-
-                # Option to perform grammar check
-                if has_zenity and len(current_content) > 10:
-                    # Only show grammar check option if content is substantial
-                    last_content = grammar_check_option(current_content)
-                    
-    except KeyboardInterrupt:
-        # Show summary before exiting
-        if clipboard_history:
-            print("\nClipboard changes during this session:")
-            print(f"Total changes: {len(clipboard_history)}")
-            save_option = input("Save clipboard history to file? (y/n): ").lower().strip()
-            if save_option == 'y' or save_option == 'yes':
-                save_clipboard_history(clipboard_history)
-        
-        print("\nClipboard monitoring stopped.")
-
-def show_clipboard_history(history):
-    """Display the clipboard history in the console."""
-    if not history:
-        print("\nNo clipboard history available yet.")
-        return
-    
-    print("\nClipboard History:")
-    print("-" * 50)
-    
-    for i, (timestamp, content) in enumerate(reversed(history), 1):
-        preview = content[:50] + "..." if len(content) > 50 else content
-        print(f"[{i}] {timestamp}: {preview}")
-    
-    print("-" * 50)
-    
-    # Ask if user wants to view a specific entry
-    choice = input("Enter number to view full content (or press Enter to continue): ").strip()
-    if choice and choice.isdigit():
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(history):
-                ts, content = history[len(history) - idx - 1]
-                print("\nFull content:")
-                print("-" * 30)
-                print(content)
-                print("-" * 30)
-                
-                # Ask if user wants to copy this back to clipboard
-                copy_back = input("Copy this back to clipboard? (y/n): ").lower().strip()
-                if copy_back == 'y' or copy_back == 'yes':
-                    pyperclip.copy(content)
-                    print("Content copied to clipboard.")
-            else:
-                print("Invalid selection.")
-        except (ValueError, IndexError):
-            print("Invalid selection.")
-
-def save_clipboard_to_file(content):
-    """Save current clipboard content to a file."""
-    if not content:
-        print("Clipboard is empty, nothing to save.")
-        return
-    
-    config = load_config()
-    base_dir = os.path.expanduser(config["base_dir"])
-    clips_dir = os.path.join(base_dir, "_clips")
-    
-    # Create clips directory if it doesn't exist
-    os.makedirs(clips_dir, exist_ok=True)
-    
-    # Generate filename with timestamp
-    now = datetime.now()
-    filename = f"clipboard_{now.strftime('%Y%m%d_%H%M%S')}.txt"
-    filepath = os.path.join(clips_dir, filename)
-    
-    try:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(content)
-        print(f"\nClipboard content saved to: {filepath}")
-    except Exception as e:
-        print(f"\nError saving clipboard content: {e}")
-
-def save_clipboard_history(history):
-    """Save clipboard history to a file."""
-    if not history:
-        print("No history to save.")
-        return
-    
-    config = load_config()
-    base_dir = os.path.expanduser(config["base_dir"])
-    clips_dir = os.path.join(base_dir, "_clips")
-    
-    # Create clips directory if it doesn't exist
-    os.makedirs(clips_dir, exist_ok=True)
-    
-    # Generate filename with timestamp
-    now = datetime.now()
-    filename = f"clipboard_history_{now.strftime('%Y%m%d_%H%M%S')}.txt"
-    filepath = os.path.join(clips_dir, filename)
-    
-    try:
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(f"Clipboard History - {now.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Total entries: {len(history)}\n\n")
-            
-            for i, (timestamp, content) in enumerate(history, 1):
-                f.write(f"[{i}] {timestamp}\n")
-                f.write("-" * 30 + "\n")
-                f.write(content + "\n")
-                f.write("-" * 30 + "\n\n")
-        
-        print(f"Clipboard history saved to: {filepath}")
-    except Exception as e:
-        print(f"Error saving clipboard history: {e}")
-
-def grammar_check_option(text):
-    """Show a notification with option to check grammar for the text."""
-    # Create a simple dialog to ask if user wants to check grammar
-    try:
-        result = subprocess.run(
-            ["zenity", "--question", "--title", "Grammar Check", 
-             "--text", "Would you like to check grammar for this clipboard text?", 
-             "--timeout", "10"],
-            check=False
-        )
-        
-        # If user clicked Yes (return code 0)
-        if result.returncode == 0:
-            # Save the text to clipboard (it might have changed since we checked)
-            pyperclip.copy(text)
-            
-            # Run the grammar check
-            return check_grammar()
-    except FileNotFoundError:
-        # Zenity not available
-        pass
-    except Exception as e:
-        print(f"Error showing grammar check dialog: {e}")
-
-
 def main():
     parser = argparse.ArgumentParser(description="Manage daily notes for projects.")
     parser.add_argument("--base-dir", default="~/.notes", help="Base directory to save notes (default: '~/.notes')")
@@ -1147,25 +846,14 @@ def main():
 
     # Add grammar check command
     grammar_parser = subparsers.add_parser("grammar", help="Check and correct grammar for text in clipboard")
-    grammar_parser.add_argument("--text", help="Text to check instead of using clipboard content")
-    
+
     # Add grammar logs command
     grammar_logs_parser = subparsers.add_parser("grammar-logs", help="View grammar check logs")
     grammar_logs_parser.add_argument("--month", help="Month to view logs for (YYYY-MM format)")
     grammar_logs_parser.add_argument("--limit", type=int, default=10, help="Maximum number of entries to display")
     grammar_logs_parser.add_argument("--entry", help="Display a specific entry in detail by its number")
     grammar_logs_parser.add_argument("--export", action="store_true", help="Export the specified entry to a file")
-    
-    # Add clipboard monitor command
-    monitor_parser = subparsers.add_parser("monitor", help="Monitor clipboard changes in real-time")
-    monitor_parser.add_argument("--interval", type=float, default=1.0, 
-                                help="Check interval in seconds (default: 1.0)")
-    monitor_parser.add_argument("--popup-command", help="Custom command to use for popups")
-    monitor_parser.add_argument("--max-length", type=int, default=100, 
-                                help="Maximum preview length for notifications")
-    monitor_parser.add_argument("--background", action="store_true",
-                                help="Run monitor in background mode")
-    
+
     # Add config subcommand
     config_parser = subparsers.add_parser("config", help="Configure noter settings")
     config_parser.add_argument("--base-dir", default=None, help="Base directory to save notes (default: '~/.notes')")
@@ -1206,11 +894,9 @@ def main():
     elif args.command == "i":
         display_important_items(args.project_name, args.base_dir)
     elif args.command == "grammar":
-        check_grammar(args.text)
+        check_grammar()
     elif args.command == "grammar-logs":
         view_grammar_logs(args.month, args.limit, args.entry, args.export)
-    elif args.command == "monitor":
-        monitor_clipboard(args.popup_command, args.interval, args.max_length, args.background)
     else:
         parser.print_help()
 

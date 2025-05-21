@@ -685,11 +685,11 @@ Return ONLY the corrected text without any explanations or comments:
         
         # Parse response
         result = response.json()
-
-        if "candidates" in result and result["candidates"]:
+        
+        if "contents" in result and result["contents"]:
             corrected_text = ""
-            for content in result["candidates"]:
-                for part in content['content'].get("parts", []):
+            for content in result["contents"]:
+                for part in content.get("parts", []):
                     if "text" in part:
                         corrected_text += part["text"]
             

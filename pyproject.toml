@@ -16,10 +16,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = [
-    "pyperclip>=1.8.0",
-    "requests>=2.25.0",
-]
 
 [project.scripts]
 mknote = "mknote.cli:main"

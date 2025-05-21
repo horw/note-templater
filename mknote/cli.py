@@ -10,7 +10,6 @@ import tempfile
 import csv
 import time
 import threading
-import pyautogui  # For auto-pasting functionality
 
 CONFIG_FILE = os.path.expanduser("~/.noter-config")
 
@@ -603,7 +602,7 @@ def view_grammar_logs(month=None, limit=10, entry_id=None, export=False):
     print(", ".join(log_files))
 
 
-def check_grammar(text=None, auto_paste=True):
+def check_grammar(text=None) -> str:
     """Check and correct grammar for text in the clipboard using Gemini API."""
     # Load configuration to get API key
     config = load_config()
@@ -707,20 +706,20 @@ Return ONLY the corrected text without any explanations or comments:
                 print("\nCorrected text:")
                 print(f"{corrected_text[:100]}{'...' if len(corrected_text) > 100 else ''}")
                 
-                # Copy the corrected text to clipboard
+                # Copy corrected text to clipboard
                 pyperclip.copy(corrected_text)
-                print("Corrected text copied to clipboard.")
+                print("\nCorrected text copied to clipboard.")
                 
-                # Auto-paste the corrected text if requested
-                if auto_paste:
-                    try:
-                        # Give a short delay to ensure the clipboard has been updated
-                        time.sleep(0.5)
-                        # Perform the paste operation using Ctrl+V
-                        pyautogui.hotkey('ctrl', 'v')
-                        print("Auto-pasted corrected text.")
-                    except Exception as e:
-                        print(f"Auto-paste failed: {e}")
+                # Count the number of changes
+                import difflib
+                d = difflib.Differ()
+                diff = list(d.compare(text.splitlines(), corrected_text.splitlines()))
+                changes = sum(1 for line in diff if line.startswith('+ ') or line.startswith('- '))
+                
+                if changes > 0:
+                    print(f"\nFound and corrected {changes} grammar issues.")
+                else:
+                    print("\nNo grammar issues found.")
                 
                 # Log the grammar check
                 log_file = log_grammar_check(text, corrected_text)
@@ -935,8 +934,6 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
         print(colorize("\n┌─ AVAILABLE COMMANDS ───────────────────────────┐", COLORS['BLUE']))
         print(colorize("│                                                 │", COLORS['BLUE']))
         print(f"{colorize('│', COLORS['BLUE'])} {colorize('q', COLORS['YELLOW'] + COLORS['BOLD'])}: Quit monitoring {colorize('                             │', COLORS['BLUE'])}")
-        print(f"{colorize('│', COLORS['BLUE'])} {colorize('s', COLORS['YELLOW'] + COLORS['BOLD'])}: Summarize and view clipboard session {colorize('       │', COLORS['BLUE'])}")
-        print(f"{colorize('│', COLORS['BLUE'])} {colorize('c', COLORS['YELLOW'] + COLORS['BOLD'])}: Clear clipboard session file {colorize('               │', COLORS['BLUE'])}")
         print(colorize("│                                                 │", COLORS['BLUE']))
         print(colorize("└─────────────────────────────────────────────────┘", COLORS['BLUE']))
 
@@ -948,22 +945,6 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
                     if cmd == 'q':
                         print(colorize("\n👋 Exiting clipboard monitor...", COLORS['MAGENTA']))
                         os._exit(0)  # Force exit all threads
-                    elif cmd == 's':
-                        # Summarize clipboard session
-                        print(colorize("\n📝 Summarizing clipboard session...", COLORS['CYAN']))
-                        summary = summarize_clipboard_session(clear_after=False)
-                        if summary:
-                            print(colorize("✅ Summary generated successfully!", COLORS['GREEN']))
-                    elif cmd == 'c':
-                        # Clear clipboard session
-                        today = datetime.now().strftime("%Y-%m-%d")
-                        session_file = os.path.expanduser(f"~/.noter-sessions/clipboard-session-{today}.md")
-                        if os.path.exists(session_file):
-                            with open(session_file, "w", encoding="utf-8") as f:
-                                f.write("")  # Clear the file
-                            print(colorize("\n🧹 Clipboard session file has been cleared.", COLORS['YELLOW']))
-                        else:
-                            print(colorize("\n⚠️ No clipboard session file found for today.", COLORS['YELLOW']))
                 except Exception as e:
                     print(colorize(f"\n❌ Error processing command: {e}", COLORS['RED']))
         
@@ -979,7 +960,7 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
         change_count = 0
         
         while True:
-            time.sleep(0.2)
+            time.sleep(interval)
             
             # Get current clipboard content
             try:
@@ -1001,12 +982,13 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
                 
                 timestamp_str = datetime.now().strftime("%H:%M:%S")
                 clipboard_history.append((timestamp_str, current_content))
-
+                
                 preview = current_content[:max_length]
                 if len(current_content) > max_length:
                     preview += "..."
 
                 last_content = current_content
+
                 if has_zenity and len(current_content) > 10:
                     try:
                         zenity_cmd = [
@@ -1021,9 +1003,9 @@ def monitor_clipboard(popup_command=None, interval=1.0, max_length=100, backgrou
                             "--icon-name=accessories-text-editor"
                         ]
                         result = subprocess.run(zenity_cmd, check=False)
+                        print(result)
                         if result.returncode == 0:
-                            last_content = check_grammar(current_content, auto_paste=True)
-                            save_clipboard_to_session_file(f"user-inserted-text:{current_content} -> ai-fixed: {last_content}", timestamp_str)
+                            last_content = check_grammar(current_content)
                     except Exception as e:
                         print(colorize(f"❌ Error showing grammar check dialog: {e}", COLORS['RED']))
     except KeyboardInterrupt:
@@ -1119,7 +1101,6 @@ def save_clipboard_to_file(content):
     except Exception as e:
         print(f"\nError saving clipboard content: {e}")
 
-
 def save_clipboard_history(history):
     """Save clipboard history to a file."""
     if not history:
@@ -1152,189 +1133,6 @@ def save_clipboard_history(history):
         print(f"Clipboard history saved to: {filepath}")
     except Exception as e:
         print(f"Error saving clipboard history: {e}")
-
-
-def save_clipboard_to_session_file(content, timestamp=None):
-    """Save clipboard content to a session file for later summarization.
-    
-    Args:
-        content (str): The clipboard content to save
-        timestamp (str, optional): Timestamp string. If None, current time is used.
-    
-    Returns:
-        str: Path to the session file
-    """
-    # Create session directory if it doesn't exist
-    session_dir = os.path.expanduser("~/.noter-sessions")
-    os.makedirs(session_dir, exist_ok=True)
-    
-    # Use today's date as part of the filename
-    today = datetime.now().strftime("%Y-%m-%d")
-    session_file = os.path.join(session_dir, f"clipboard-session-{today}.md")
-    
-    # Format the timestamp
-    if timestamp is None:
-        timestamp = datetime.now().strftime("%H:%M:%S")
-    
-    # Write the content to the file with a timestamp header
-    with open(session_file, "a", encoding="utf-8") as f:
-        f.write(f"\n\n## Clipboard Entry at {timestamp}\n\n")
-        f.write(content)
-        f.write("\n\n---\n")
-    
-    return session_file
-
-
-def summarize_clipboard_session(session_file=None, clear_after=False):
-    """Summarize the clipboard session file using Gemini API.
-    
-    Args:
-        session_file (str, optional): Path to the session file. If None, use today's file.
-        clear_after (bool): Whether to clear the session file after summarizing.
-    
-    Returns:
-        str: The summary text
-    """
-    config = load_config()
-    
-    # Define colors for better terminal output
-    GREEN = '\033[32m'
-    YELLOW = '\033[33m'
-    RED = '\033[31m'
-    BLUE = '\033[34m'
-    MAGENTA = '\033[35m'
-    CYAN = '\033[36m'
-    BOLD = '\033[1m'
-    RESET = '\033[0m'
-    
-    # If no session file is provided, use today's file
-    if session_file is None:
-        today = datetime.now().strftime("%Y-%m-%d")
-        session_file = os.path.expanduser(f"~/.noter-sessions/clipboard-session-{today}.md")
-    
-    # Check if the file exists
-    if not os.path.exists(session_file):
-        print(f"{RED}Session file not found: {session_file}{RESET}")
-        return None
-    
-    # Read the content of the session file
-    with open(session_file, "r", encoding="utf-8") as f:
-        session_content = f.read()
-    
-    if not session_content.strip():
-        print(f"{YELLOW}Session file is empty.{RESET}")
-        return None
-    
-    # Get the API key
-    api_key = config.get('gemini_api_key', '')
-    if not api_key:
-        print(f"{RED}API key not found. Please set it using 'mknote config --api-key YOUR_API_KEY'{RESET}")
-        return None
-    
-    # Define a function to show a spinner animation
-    def show_spinner():
-        spinner_chars = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"]
-        i = 0
-        try:
-            while True:
-                i = (i + 1) % len(spinner_chars)
-                print(f"\r{CYAN}{BOLD}Generating summary {spinner_chars[i]}{RESET}", end="", flush=True)
-                time.sleep(0.1)
-        except Exception:
-            pass
-    
-    # Create and start the spinner thread
-    spinner_thread = threading.Thread(target=show_spinner)
-    spinner_thread.daemon = True
-    
-    try:
-        print(f"\n{BLUE}{BOLD}Summarizing clipboard session using Gemini AI...{RESET}")
-        spinner_thread.start()
-        
-        # API endpoint
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-
-        # Prepare the prompt
-        prompt = f"""
-You are an assistant tasked with summarizing a collection of clipboard entries.
-Please create a concise summary of the following clipboard session, identifying key topics, 
-main points, and any action items or important information.
-
-Format your summary with sections:
-1. Key Topics
-2. Main Points
-3. Action Items (if any)
-4. Important Information
-
-The clipboard session contents are below:
-
-{session_content}
-"""
-        
-        # Prepare the request body
-        body = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": prompt
-                        }
-                    ]
-                }
-            ]
-        }
-        
-        # Make the API request
-        response = requests.post(url, json=body)
-        
-        # Stop the spinner
-        spinner_thread.join(0.5)
-        print("\r" + " " * 50 + "\r", end="", flush=True)  # Clear the spinner line
-        
-        # Process the response
-        if response.status_code == 200:
-            response_data = response.json()
-            
-            try:
-                # Extract the summary from the response
-                summary = response_data["candidates"][0]["content"]["parts"][0]["text"]
-                
-                # Save the summary to a file
-                summary_file = os.path.splitext(session_file)[0] + "-summary.md"
-                with open(summary_file, "w", encoding="utf-8") as f:
-                    f.write(f"# Clipboard Session Summary ({datetime.now().strftime('%Y-%m-%d')})\n\n")
-                    f.write(summary)
-                
-                # Print the summary
-                print(f"{GREEN}{BOLD}Summary generated successfully!{RESET}")
-                print(f"\n{MAGENTA}{BOLD}Summary:{RESET}")
-                print(f"{CYAN}{summary}{RESET}")
-                print(f"\n{GREEN}Summary saved to: {summary_file}{RESET}")
-                
-                # Clear the session file if requested
-                if clear_after:
-                    with open(session_file, "w", encoding="utf-8") as f:
-                        f.write("")  # Clear the file
-                    print(f"{YELLOW}Session file has been cleared.{RESET}")
-                
-                return summary
-                
-            except (KeyError, IndexError) as e:
-                print(f"{RED}Error parsing API response: {e}{RESET}")
-                print(response_data)
-                return None
-        else:
-            print(f"{RED}Error: {response.status_code}{RESET}")
-            print(response.text)
-            return None
-            
-    except Exception as e:
-        print(f"{RED}Error summarizing session: {e}{RESET}")
-        return None
-    finally:
-        # Make sure to stop the spinner thread
-        if spinner_thread.is_alive():
-            spinner_thread.join(0.1)
 
 
 def grammar_check_option(text):
@@ -1397,7 +1195,6 @@ def main():
     # Add grammar check command
     grammar_parser = subparsers.add_parser("grammar", help="Check and correct grammar for text in clipboard")
     grammar_parser.add_argument("--text", help="Text to check instead of using clipboard content")
-    grammar_parser.add_argument("--no-auto-paste", action="store_true", help="Disable auto-pasting corrected text")
     
     # Add grammar logs command
     grammar_logs_parser = subparsers.add_parser("grammar-logs", help="View grammar check logs")
@@ -1415,11 +1212,6 @@ def main():
                                 help="Maximum preview length for notifications")
     monitor_parser.add_argument("--background", action="store_true",
                                 help="Run monitor in background mode")
-    
-    # Add summarize command
-    summarize_parser = subparsers.add_parser("summarize", help="Summarize clipboard session file")
-    summarize_parser.add_argument("--file", help="Path to session file (defaults to today's file)")
-    summarize_parser.add_argument("--clear", action="store_true", help="Clear the session file after summarizing")
     
     # Add config subcommand
     config_parser = subparsers.add_parser("config", help="Configure noter settings")
@@ -1461,14 +1253,11 @@ def main():
     elif args.command == "i":
         display_important_items(args.project_name, args.base_dir)
     elif args.command == "grammar":
-        check_grammar(args.text, auto_paste=not args.no_auto_paste)
+        check_grammar(args.text)
     elif args.command == "grammar-logs":
         view_grammar_logs(args.month, args.limit, args.entry, args.export)
     elif args.command == "monitor":
         monitor_clipboard(args.popup_command, args.interval, args.max_length, args.background)
-    elif args.command == "summarize":
-        # Use the specified file or default to today's file
-        summarize_clipboard_session(args.file, args.clear)
     else:
         parser.print_help()
 

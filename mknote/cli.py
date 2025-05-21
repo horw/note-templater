@@ -724,19 +724,6 @@ Return ONLY the corrected text without any explanations or comments:
                 # Log the grammar check
                 log_file = log_grammar_check(text, corrected_text)
 
-                # Notify user that grammar check is complete
-                try:
-                    # Create completion notification with HTML styling
-                    subprocess.Popen([
-                        "notify-send",
-                        "Text has been checked and updated in clipboard."
-                    ])
-                    # Also print to console for record keeping
-                    print("\n✅ Grammar check completed and clipboard updated.")
-                except Exception as e:
-                    # If notification fails, at least print to console
-                    print(f"\n✅ Grammar check completed, but couldn't show notification: {e}")
-                
                 return corrected_text
             else:
                 print("No corrected text received from API.")
